@@ -1,0 +1,15 @@
+flask==2.3.3
+flask-socketio==5.3.6
+openai==1.3.0
+python-dotenv==1.0.0
+pandas==2.0.3
+numpy==1.24.3
+langchain==0.0.346
+sentence-transformers==2.2.2
+faiss-cpu==1.7.4
+elevenlabs==0.2.26
+pydub==0.25.1
+speechrecognition==3.10.0
+pyaudio==0.2.11
+eventlet==0.33.3
+python-socketio==5.8.0
