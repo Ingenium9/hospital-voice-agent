@@ -2,6 +2,17 @@ import os
 import pandas as pd
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
+from rapidfuzz import fuzz, process
+import re
+
+
+def normalize_text(s):
+    s=str(s).lower()
+    s=re.sub(r'[^a-z0-9\s]','',s)
+    s=re.sub(r'\s+','',s)
+    return s.strip()
+
+
 
 # Embeddings selection (try HF, fallback to legacy, then OpenAI)
 try:
@@ -114,14 +125,32 @@ class HospitalDataLoader:
         except Exception:
             return []
 
-    def exact_match_search(self, hospital_name=None, city=None):
-        """Exact / substring match using pandas."""
-        if self.df is None:
-            self.load_data()
+    def exact_match_search(self, hospital_name=None, city=None, fuzzy_thresh=85, max_fuzzy=5):
 
-        results = self.df.copy()
-        if hospital_name:
-            results = results[results["hospital_name"].str.contains(hospital_name, case=False, na=False)]
-        if city:
-            results = results[results["city"].str.contains(city, case=False, na=False)]
-        return results
+        results=self.df.copy()
+
+        if "hospital_name_norm" not in results.columns:
+            results["hospital_name_norm"]=results["hospital_name"].astype(str).apply(normalize_text)
+
+
+        q=normalize_text(hospital_name)
+
+        #word boundary regex
+        pattern =r'\b'+re.escape(q)+r'\b'
+        exact=results[results["hospital_name_norm"].str.contains(pattern,regex=True)]
+        if not exact.empty:
+            return exact
+        
+        #check substring
+        sub=results[results["hospital_name_norm"].str.contains(q)]
+        if not sub.empty: 
+            return sub
+        
+        choices=results["hospital_name_norm"].tolist()
+        fuzzy=process.extract(q, choices,scorer=fuzz.WRatio,limit=5)
+        good=[c for c,s,i in fuzzy if s>=85]
+        return results[results["hospital_name_norm"].isin(good)]
+    
+
+
+        
