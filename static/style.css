@@ -195,23 +195,16 @@ main {
     justify-content: flex-start;
 }
 
-/* assistant bubble: preserve newlines but keep normal wrapping and spacing */
 .assistant-message .message-content {
     background: #f1f3f4;
     color: #333;
     border-bottom-left-radius: 5px;
-
-    /* preserve newline characters, but collapse repeated spaces */
     white-space: pre-line;
-
-    /* improve readability without breaking layout */
     line-height: 1.45;
     padding: 12px 16px;
     max-width: 84%;
     word-break: break-word;
 }
-
-
 
 footer {
     text-align: center;
@@ -221,7 +214,6 @@ footer {
     font-size: 0.9rem;
 }
 
-/* Scrollbar styling */
 .conversation-log::-webkit-scrollbar {
     width: 6px;
 }
@@ -236,7 +228,6 @@ footer {
     border-radius: 3px;
 }
 
-/* Loading animation */
 .loading {
     display: inline-block;
     width: 16px;

@@ -1,6 +1,3 @@
-// static/script.js — continuous-conversation ready version
-// Replace the old static/script.js with this file.
-
 class VoiceAgent {
   constructor() {
     this.socket = io();
@@ -11,58 +8,43 @@ class VoiceAgent {
     this.visualizer = document.getElementById('visualizer');
     this.systemStatus = document.getElementById('systemStatus');
 
-    // Recording flags and objects
     this.isRecording = false;
     this.mediaRecorder = null;
-    this.chunks = [];
     this.mediaStream = null;
-    this.mediaTimesliceMs = 5000; // for fallback MediaRecorder chunk size
+    this.mediaTimesliceMs = 5000;
     this.autoStopTimer = null;
 
-    // Web Speech API recognition
     this.recognition = null;
     this.hasWebSpeech = false;
 
-    // speech synthesis fallback
     this.synth = window.speechSynthesis || null;
-    this.currentUtterance = null;
 
     this.setupSocketListeners();
     this.initializeEventListeners();
     this.updateStatus('ready');
     this.initWebSpeechRecognition();
-    this.log('VoiceAgent ready');
   }
 
-  // ---------- socket listeners ----------
+  // Socket listeners
   setupSocketListeners() {
-    this.socket.on('connect', () => this.log('Connected to server'));
-
-    this.socket.on('system_status', (data) => {
-      this.systemStatusUpdate(data);
-    });
-
+    this.socket.on('connect', () => console.log('Socket connected'));
+    this.socket.on('system_status', (data) => this.systemStatusUpdate(data));
     this.socket.on('assistant_response', (data) => {
       const text = data.text || '';
       this.addMessage('assistant', text);
-      if (data.audio) {
-        this.playBase64Audio(data.audio);
-      } else {
-        this.speakClientSide(text);
-      }
+      if (data.audio) this.playBase64Audio(data.audio);
+      else this.speakClientSide(text);
     });
-
     this.socket.on('user_input', (data) => {
       if (data && data.text) this.addMessage('user', data.text);
     });
-
     this.socket.on('error', (d) => {
       console.error('Server error:', d);
       this.showError(d.message || 'Server error');
     });
   }
 
-  // ---------- init / UI ----------
+  // UI events
   initializeEventListeners() {
     this.micButton.addEventListener('click', () => {
       if (this.isRecording) this.stopRecording();
@@ -80,11 +62,9 @@ class VoiceAgent {
 
     window.addEventListener('beforeunload', () => {
       if (this.synth && this.synth.speaking) this.synth.cancel();
-      if (this.mediaStream) {
-        this.mediaStream.getTracks().forEach(t => t.stop());
-      }
+      if (this.mediaStream) this.mediaStream.getTracks().forEach(t => t.stop());
       if (this.recognition && this.recognition.stop) {
-        try { this.recognition.onend = null; this.recognition.stop(); } catch(e){}
+        try { this.recognition.onend = null; this.recognition.stop(); } catch (e) {}
       }
     });
   }
@@ -92,10 +72,10 @@ class VoiceAgent {
   systemStatusUpdate(data) {
     const initialized = !!(data && data.initialized);
     if (initialized) {
-      this.systemStatus.innerHTML = '<span class="status-badge ready">✅ System Ready</span>';
+      this.systemStatus.innerHTML = '<span class="status-badge ready">System Ready</span>';
       this.micButton.disabled = false;
     } else {
-      this.systemStatus.innerHTML = '<span class="status-badge error">❌ System Issues</span>';
+      this.systemStatus.innerHTML = '<span class="status-badge error">System Issues</span>';
       this.micButton.disabled = true;
     }
   }
@@ -121,22 +101,16 @@ class VoiceAgent {
     this.conversationLog.scrollTop = this.conversationLog.scrollHeight;
   }
 
-  // ---------- logging / UI helpers ----------
-  log(...args) {
-    console.log(...args);
-  }
-
   showError(msg) {
     console.error('UI Error:', msg);
     this.status.textContent = `Error: ${msg}`;
     setTimeout(() => this.updateStatus('ready'), 3500);
   }
 
-  // ---------- Web Speech API (preferred for continuous) ----------
+  // Web Speech API initialization
   initWebSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
     if (!SpeechRecognition) {
-      this.log('Web Speech API not available; will use MediaRecorder fallback');
       this.hasWebSpeech = false;
       return;
     }
@@ -145,41 +119,29 @@ class VoiceAgent {
       this.recognition.continuous = true;
       this.recognition.interimResults = false;
       this.recognition.lang = 'en-IN';
-      this.recognition.onstart = () => this.log('SpeechRecognition started');
+      this.recognition.onstart = () => console.log('SpeechRecognition started');
       this.recognition.onend = () => {
-        this.log('SpeechRecognition ended');
-        // if we are still in continuous mode and user hasn't stopped, restart
         if (this.isRecording) {
-          try { this.recognition.start(); } catch (e) { this.log('recognition restart failed', e); }
+          try { this.recognition.start(); } catch (e) { console.log('recognition restart failed', e); }
         }
       };
-      this.recognition.onerror = (e) => {
-        this.log('SpeechRecognition error', e);
-        // Some errors are recoverable; others we stop continuous mode and fallback
-        // If fatal, stop recognition and fallback
-      };
+      this.recognition.onerror = () => {};
       this.recognition.onresult = (evt) => {
-        // send all final results
         let finalText = '';
         for (let i = evt.resultIndex; i < evt.results.length; ++i) {
           const res = evt.results[i];
           if (res.isFinal) finalText += res[0].transcript;
         }
         finalText = finalText.trim();
-        if (finalText) {
-          //this.addMessage('user', finalText);
-          this.socket.emit('text_input', { text: finalText });
-        }
+        if (finalText) this.socket.emit('text_input', { text: finalText });
       };
       this.hasWebSpeech = true;
-      this.log('Web Speech API initialized (continuous mode available)');
     } catch (e) {
-      this.log('SpeechRecognition init failed:', e);
       this.hasWebSpeech = false;
     }
   }
 
-  // ---------- start / stop continuous listening ----------
+  // Start/stop listening
   async startRecording() {
     if (this.isRecording) return;
     this.isRecording = true;
@@ -187,71 +149,45 @@ class VoiceAgent {
     this.visualizer.classList.add('active');
     this.updateStatus('listening');
 
-    // If Web Speech API available -> use it (best, with near real-time results)
     if (this.hasWebSpeech && this.recognition) {
       try {
-        // Avoid start() InvalidStateError when already started
-        try { this.recognition.onend = () => { if (this.isRecording) { try { this.recognition.start(); } catch(e){} } }; } catch(e){}
+        try { this.recognition.onend = () => { if (this.isRecording) { try { this.recognition.start(); } catch (e) {} } }; } catch (e) {}
         this.recognition.start();
-        this.log('Conversation started via SpeechRecognition');
-        // tell server we started (optional)
         this.socket.emit('listening_status', { status: 'active' });
-        // emit greeting once (server may already send greeting on start via socket)
       } catch (e) {
-        this.log('SpeechRecognition start error, falling back to MediaRecorder:', e);
         this.hasWebSpeech = false;
         await this._startMediaRecorderFallback();
       }
     } else {
-      // Start MediaRecorder fallback (record short timeslice chunks repeatedly)
       await this._startMediaRecorderFallback();
     }
 
-    // Send toggle to server (so server can optionally send initial greeting)
     this.socket.emit('toggle_conversation', { action: 'start' });
   }
 
   async _startMediaRecorderFallback() {
     try {
-      // get mic stream
       if (!this.mediaStream) {
         this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
-      // create MediaRecorder if necessary
       if (!this.mediaRecorder) {
         try {
           this.mediaRecorder = new MediaRecorder(this.mediaStream);
         } catch (err) {
-          // fallback to webm if browser needs type
           this.mediaRecorder = new MediaRecorder(this.mediaStream, { mimeType: 'audio/webm' });
         }
-
         this.mediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            // send chunk for transcription (non-blocking)
-            this._uploadAudioChunk(e.data);
-          }
-        };
-        this.mediaRecorder.onstop = () => {
-          this.log('MediaRecorder stopped');
+          if (e.data && e.data.size > 0) this._uploadAudioChunk(e.data);
         };
       }
 
-      // start with timeslice; this triggers ondataavailable periodically
-      // Use timeslice to produce chunks while keeping continuous recording.
-      this.mediaRecorder.start(this.mediaTimesliceMs); // e.g., every 5s chunk generated
-      this.log('MediaRecorder started (timeslice)', this.mediaTimesliceMs);
-      // Safety: auto-stop after long time (5 minutes)
+      this.mediaRecorder.start(this.mediaTimesliceMs);
       if (this.autoStopTimer) clearTimeout(this.autoStopTimer);
       this.autoStopTimer = setTimeout(() => {
-        if (this.isRecording) {
-          this.log('Auto-stop safety triggered');
-          this.stopRecording();
-        }
+        if (this.isRecording) this.stopRecording();
       }, 5 * 60 * 1000);
     } catch (e) {
-      this.showError('Microphone access failed: ' + e.message);
-      console.error(e);
+      this.showError('Microphone access failed: ' + (e.message || e));
       this.isRecording = false;
       this.micButton.classList.remove('listening');
       this.visualizer.classList.remove('active');
@@ -265,31 +201,23 @@ class VoiceAgent {
     this.micButton.classList.remove('listening');
     this.visualizer.classList.remove('active');
     if (this.recognition) {
-      try {
-        // Remove onend handler to avoid auto-restart
-        this.recognition.onend = null;
-        this.recognition.stop();
-      } catch (e) { /* ignore */ }
+      try { this.recognition.onend = null; this.recognition.stop(); } catch (e) {}
     }
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      try { this.mediaRecorder.stop(); } catch (e) { /* ignore */ }
+      try { this.mediaRecorder.stop(); } catch (e) {}
     }
     if (this.autoStopTimer) {
       clearTimeout(this.autoStopTimer);
       this.autoStopTimer = null;
     }
     this.updateStatus('ready');
-    // inform server
     this.socket.emit('toggle_conversation', { action: 'stop' });
-    this.log('Conversation stopped by user');
   }
 
-  // ---------- upload chunk (MediaRecorder fallback) ----------
+  // Upload recorded chunk for server transcription
   async _uploadAudioChunk(blob) {
     if (!blob || blob.size === 0) return;
-    // show interim user bubble
     this.addMessage('user', '(voice message recorded)');
-    // POST to /transcribe (same server endpoint)
     try {
       const fd = new FormData();
       fd.append('file', blob, 'chunk.webm');
@@ -298,7 +226,7 @@ class VoiceAgent {
       this.updateStatus('listening');
       if (!resp.ok) {
         const txt = await resp.text();
-        console.error('Transcribe failed: ', resp.status, txt);
+        console.error('Transcribe failed:', resp.status, txt);
         return;
       }
       const j = await resp.json();
@@ -314,7 +242,7 @@ class VoiceAgent {
     }
   }
 
-  // ---------- audio playback & fallback speak ----------
+  // Play base64 audio or fallback to speechSynthesis
   playBase64Audio(b64) {
     if (!b64) return;
     try {
@@ -327,7 +255,6 @@ class VoiceAgent {
       this.audioPlayer.src = url;
       this.audioPlayer.play().catch(err => {
         console.warn('Audio play blocked:', err);
-        // fallback to local TTS
         this.speakClientSide(this.getLatestAssistantText());
       });
     } catch (e) {
@@ -345,7 +272,6 @@ class VoiceAgent {
   speakClientSide(text) {
     if (!text || !this.synth) return;
     try {
-      // cancel any existing speech to prefer latest
       if (this.synth.speaking) this.synth.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'en-IN';
